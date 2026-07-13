@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  core-windows:
-    name: NovelCore / Windows
-    runs-on: windows-2022
+  core-linux:
+    name: NovelCore / Linux
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2

@@ -94,6 +94,6 @@ public enum ContextBuilder {
     }
 
     public static func relevance(of candidate: String, to query: String) -> Double {
-        TextAnalyzer.jaccardSimilarity(candidate, query, ngramSize: 3)
+        TextAnalyzer.jaccardSimilarity(candidate, query, ngramSize: 2)
     }
 }
