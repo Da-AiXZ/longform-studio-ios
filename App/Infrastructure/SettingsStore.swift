@@ -9,12 +9,35 @@ final class SettingsStore: ObservableObject {
         var assignments: RoleAssignments
         var platformProfiles: [PlatformProfile]
         var blindPreferences: [String: Int]
+        var writingTemplates: [WritingTemplate]
+
+        enum CodingKeys: String, CodingKey {
+            case profiles, assignments, platformProfiles, blindPreferences, writingTemplates
+        }
+
+        init(profiles: [AIEndpointProfile], assignments: RoleAssignments, platformProfiles: [PlatformProfile], blindPreferences: [String: Int], writingTemplates: [WritingTemplate]) {
+            self.profiles = profiles
+            self.assignments = assignments
+            self.platformProfiles = platformProfiles
+            self.blindPreferences = blindPreferences
+            self.writingTemplates = writingTemplates
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            profiles = try container.decodeIfPresent([AIEndpointProfile].self, forKey: .profiles) ?? []
+            assignments = try container.decodeIfPresent(RoleAssignments.self, forKey: .assignments) ?? RoleAssignments()
+            platformProfiles = try container.decodeIfPresent([PlatformProfile].self, forKey: .platformProfiles) ?? [BuiltInPlatformProfiles.qidian, BuiltInPlatformProfiles.fanqie]
+            blindPreferences = try container.decodeIfPresent([String: Int].self, forKey: .blindPreferences) ?? [:]
+            writingTemplates = try container.decodeIfPresent([WritingTemplate].self, forKey: .writingTemplates) ?? []
+        }
     }
 
     @Published var profiles: [AIEndpointProfile] { didSet { persist() } }
     @Published var assignments: RoleAssignments { didSet { persist() } }
     @Published var platformProfiles: [PlatformProfile] { didSet { persist() } }
     @Published var blindPreferences: [String: Int] { didSet { persist() } }
+    @Published var writingTemplates: [WritingTemplate] { didSet { persist() } }
 
     let keychain = KeychainStore()
     private let defaults: UserDefaults
@@ -28,11 +51,13 @@ final class SettingsStore: ObservableObject {
             assignments = payload.assignments
             platformProfiles = payload.platformProfiles
             blindPreferences = payload.blindPreferences
+            writingTemplates = payload.writingTemplates
         } else {
             profiles = []
             assignments = RoleAssignments()
             platformProfiles = [BuiltInPlatformProfiles.qidian, BuiltInPlatformProfiles.fanqie]
             blindPreferences = [:]
+            writingTemplates = []
         }
         isLoading = false
     }
@@ -62,9 +87,22 @@ final class SettingsStore: ObservableObject {
         try keychain.remove(reference: profile.keychainReference)
     }
 
+    func save(template: WritingTemplate) {
+        if let index = writingTemplates.firstIndex(where: { $0.id == template.id }) {
+            writingTemplates[index] = template
+        } else {
+            writingTemplates.append(template)
+        }
+        writingTemplates.sort { $0.createdAt > $1.createdAt }
+    }
+
+    func delete(templateID: UUID) {
+        writingTemplates.removeAll { $0.id == templateID }
+    }
+
     private func persist() {
         guard !isLoading else { return }
-        let payload = Payload(profiles: profiles, assignments: assignments, platformProfiles: platformProfiles, blindPreferences: blindPreferences)
+        let payload = Payload(profiles: profiles, assignments: assignments, platformProfiles: platformProfiles, blindPreferences: blindPreferences, writingTemplates: writingTemplates)
         if let data = try? JSONEncoder.iso8601.encode(payload) { defaults.set(data, forKey: storageKey) }
     }
 }

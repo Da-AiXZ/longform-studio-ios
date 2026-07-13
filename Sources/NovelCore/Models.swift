@@ -138,6 +138,7 @@ public enum QualityDimension: String, Codable, CaseIterable, Hashable, Sendable 
 public struct NovelProject: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var schemaVersion: Int
+    public var planRevision: Int
     public var title: String
     public var platform: PublishingPlatform
     public var genre: String
@@ -152,7 +153,8 @@ public struct NovelProject: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(),
-        schemaVersion: Int = 1,
+        schemaVersion: Int = 2,
+        planRevision: Int = 0,
         title: String,
         platform: PublishingPlatform,
         genre: String,
@@ -167,6 +169,7 @@ public struct NovelProject: Codable, Identifiable, Hashable, Sendable {
     ) {
         self.id = id
         self.schemaVersion = schemaVersion
+        self.planRevision = planRevision
         self.title = title
         self.platform = platform
         self.genre = genre
@@ -178,6 +181,29 @@ public struct NovelProject: Codable, Identifiable, Hashable, Sendable {
         self.targetChapterWords = targetChapterWords
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, schemaVersion, planRevision, title, platform, genre, sellingPoint, targetWordCount
+        case protagonistGoal, restrictedContent, perspective, targetChapterWords, createdAt, updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        planRevision = try container.decodeIfPresent(Int.self, forKey: .planRevision) ?? 0
+        title = try container.decode(String.self, forKey: .title)
+        platform = try container.decode(PublishingPlatform.self, forKey: .platform)
+        genre = try container.decodeIfPresent(String.self, forKey: .genre) ?? "待确认"
+        sellingPoint = try container.decodeIfPresent(String.self, forKey: .sellingPoint) ?? ""
+        targetWordCount = try container.decodeIfPresent(Int.self, forKey: .targetWordCount) ?? 1_000_000
+        protagonistGoal = try container.decodeIfPresent(String.self, forKey: .protagonistGoal) ?? ""
+        restrictedContent = try container.decodeIfPresent([String].self, forKey: .restrictedContent) ?? []
+        perspective = try container.decodeIfPresent(NarrativePerspective.self, forKey: .perspective) ?? .thirdPersonLimited
+        targetChapterWords = try container.decodeIfPresent(Int.self, forKey: .targetChapterWords) ?? 2_500
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
     }
 }
 
@@ -643,6 +669,9 @@ public struct ProjectWorkspace: Codable, Sendable {
     public var generationRecords: [GenerationRecord]
     public var planningArtifacts: [PlanningArtifact]
     public var styleProfile: StyleProfile?
+    public var preferredMode: WorkspaceMode
+    public var agentSession: AgentSession
+    public var appliedTemplate: WritingTemplateSnapshot?
 
     public init(
         project: NovelProject,
@@ -658,7 +687,10 @@ public struct ProjectWorkspace: Codable, Sendable {
         reviews: [ReviewReport] = [],
         generationRecords: [GenerationRecord] = [],
         planningArtifacts: [PlanningArtifact] = [],
-        styleProfile: StyleProfile? = nil
+        styleProfile: StyleProfile? = nil,
+        preferredMode: WorkspaceMode = .agent,
+        agentSession: AgentSession = AgentSession(),
+        appliedTemplate: WritingTemplateSnapshot? = nil
     ) {
         self.project = project
         self.bible = bible
@@ -674,6 +706,9 @@ public struct ProjectWorkspace: Codable, Sendable {
         self.generationRecords = generationRecords
         self.planningArtifacts = planningArtifacts
         self.styleProfile = styleProfile
+        self.preferredMode = preferredMode
+        self.agentSession = agentSession
+        self.appliedTemplate = appliedTemplate
     }
 
     public func activeVersion(for chapter: ChapterCard) -> ChapterVersion? {
@@ -684,6 +719,7 @@ public struct ProjectWorkspace: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case project, bible, characters, worldRules, timeline, foreshadowing, volumes, chapters, versions
         case facts, reviews, generationRecords, planningArtifacts, styleProfile
+        case preferredMode, agentSession, appliedTemplate
     }
 
     public init(from decoder: Decoder) throws {
@@ -702,6 +738,9 @@ public struct ProjectWorkspace: Codable, Sendable {
         generationRecords = try container.decodeIfPresent([GenerationRecord].self, forKey: .generationRecords) ?? []
         planningArtifacts = try container.decodeIfPresent([PlanningArtifact].self, forKey: .planningArtifacts) ?? []
         styleProfile = try container.decodeIfPresent(StyleProfile.self, forKey: .styleProfile)
+        preferredMode = try container.decodeIfPresent(WorkspaceMode.self, forKey: .preferredMode) ?? .agent
+        agentSession = try container.decodeIfPresent(AgentSession.self, forKey: .agentSession) ?? AgentSession()
+        appliedTemplate = try container.decodeIfPresent(WritingTemplateSnapshot.self, forKey: .appliedTemplate)
     }
 }
 
@@ -710,7 +749,7 @@ public struct ProjectArchive: Codable, Sendable {
     public var exportedAt: Date
     public var workspace: ProjectWorkspace
 
-    public init(archiveVersion: Int = 1, exportedAt: Date = Date(), workspace: ProjectWorkspace) {
+    public init(archiveVersion: Int = 2, exportedAt: Date = Date(), workspace: ProjectWorkspace) {
         self.archiveVersion = archiveVersion
         self.exportedAt = exportedAt
         self.workspace = workspace
