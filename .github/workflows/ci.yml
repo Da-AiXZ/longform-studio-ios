@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-windows:
+    name: NovelCore / Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+      - name: Swift version
+        run: swift --version
+      - name: Test NovelCore
+        run: swift test --parallel
+
+  ios:
+    name: iOS 16 / Xcode 16.4
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select pinned Xcode
+        run: bash Scripts/select-xcode.sh
+      - name: Test NovelCore on macOS
+        run: swift test --parallel
+      - name: Install pinned XcodeGen
+        run: bash Scripts/install-xcodegen.sh
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project LongformStudio.xcodeproj -scheme LongformStudio
+      - name: Static analysis
+        run: |
+          xcodebuild analyze \
+            -project LongformStudio.xcodeproj \
+            -scheme LongformStudio \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Choose iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          UDID="$(xcrun simctl list devices available -j | ruby -rjson -e 'data=JSON.parse(STDIN.read); devices=data["devices"].values.flatten; preferred=devices.find { |d| d["name"] == "iPhone 16" } || devices.find { |d| d["name"].start_with?("iPhone") }; abort "No iPhone simulator" unless preferred; puts preferred["udid"]')"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: Run unit and UI tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project LongformStudio.xcodeproj \
+            -scheme LongformStudio \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' \
+            -resultBundlePath "$RUNNER_TEMP/LongformStudio.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Export UI screenshots
+        if: always()
+        run: bash Scripts/capture-ui-attachments.sh "$RUNNER_TEMP/LongformStudio.xcresult" "$RUNNER_TEMP/ui-attachments"
+      - name: Build unsigned device app
+        run: |
+          xcodebuild build \
+            -project LongformStudio.xcodeproj \
+            -scheme LongformStudio \
+            -configuration Debug \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+      - name: Package Debug IPA
+        run: bash Scripts/package-ipa.sh "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphoneos/长篇工坊.app" "$RUNNER_TEMP/LongformStudio-Debug-unsigned.ipa"
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-artifacts
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/LongformStudio.xcresult
+            ${{ runner.temp }}/ui-attachments
+            ${{ runner.temp }}/LongformStudio-Debug-unsigned.ipa
+
+  source-audit:
+    name: Source audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject secrets and insecure transport exceptions
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE 'sk-[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{20,}|com\.apple\.private' --exclude-dir=.git .; then
+            echo "Potential secret or insecure ATS exception found." >&2
+            exit 1
+          fi
+          if grep -R -A1 '<key>NSAllowsArbitraryLoads</key>' App/Resources/Info.plist | grep -q '<true'; then
+            echo "NSAllowsArbitraryLoads must stay disabled." >&2
+            exit 1
+          fi
+          test -z "$(find . -name '*.mobileprovision' -o -name '*.p12')"

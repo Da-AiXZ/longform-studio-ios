@@ -1,0 +1,56 @@
+name: Release IPA
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select pinned Xcode
+        run: bash Scripts/select-xcode.sh
+      - name: Install pinned XcodeGen
+        run: bash Scripts/install-xcodegen.sh
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+      - name: Build unsigned Release app
+        run: |
+          xcodebuild build \
+            -project LongformStudio.xcodeproj \
+            -scheme LongformStudio \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+      - name: Package unsigned IPA
+        run: bash Scripts/package-ipa.sh "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/长篇工坊.app" "$RUNNER_TEMP/LongformStudio-unsigned.ipa"
+      - name: Produce TrollStore fakesigned IPA
+        run: bash Scripts/fakesign-ipa.sh "$RUNNER_TEMP/LongformStudio-unsigned.ipa" "$RUNNER_TEMP/LongformStudio-TrollStore.ipa"
+      - name: Checksums
+        run: |
+          cd "$RUNNER_TEMP"
+          shasum -a 256 LongformStudio-unsigned.ipa LongformStudio-TrollStore.ipa > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LongformStudio-IPA
+          path: |
+            ${{ runner.temp }}/LongformStudio-unsigned.ipa
+            ${{ runner.temp }}/LongformStudio-TrollStore.ipa
+            ${{ runner.temp }}/SHA256SUMS.txt
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ runner.temp }}/LongformStudio-unsigned.ipa
+            ${{ runner.temp }}/LongformStudio-TrollStore.ipa
+            ${{ runner.temp }}/SHA256SUMS.txt
