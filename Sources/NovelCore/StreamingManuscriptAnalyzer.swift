@@ -115,12 +115,12 @@ public struct StreamingManuscriptAnalyzer: Sendable {
 
     private func consume(text: String, lineBuffer: inout String, collector: inout ManuscriptCollector) {
         lineBuffer += text
-        while let newline = lineBuffer.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
+        lineBuffer = lineBuffer
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        while let newline = lineBuffer.firstIndex(of: "\n") {
             let line = String(lineBuffer[..<newline])
-            var next = lineBuffer.index(after: newline)
-            if lineBuffer[newline] == "\r", next < lineBuffer.endIndex, lineBuffer[next] == "\n" {
-                next = lineBuffer.index(after: next)
-            }
+            let next = lineBuffer.index(after: newline)
             lineBuffer = String(lineBuffer[next...])
             collector.consume(line: line)
         }
