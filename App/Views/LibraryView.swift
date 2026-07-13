@@ -61,7 +61,7 @@ struct LibraryView: View {
         }
         .fileImporter(
             isPresented: $showImporter,
-            allowedContentTypes: [.plainText, .markdown, UTType(filenameExtension: "novelproj") ?? .data],
+            allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText, UTType(filenameExtension: "novelproj") ?? .data],
             allowsMultipleSelection: false
         ) { result in
             guard case .success(let urls) = result, let url = urls.first else {

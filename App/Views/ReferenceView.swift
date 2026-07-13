@@ -70,7 +70,7 @@ struct ReferenceView: View {
         .sheet(item: $selectedRule) { WorldRuleEditor(session: session, rule: $0) }
         .sheet(isPresented: $showTimelineEditor) { TimelineEditor(session: session) }
         .sheet(isPresented: $showForeshadowEditor) { ForeshadowingEditor(session: session) }
-        .fileImporter(isPresented: $showStyleImporter, allowedContentTypes: [.plainText, .markdown], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $showStyleImporter, allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText], allowsMultipleSelection: false) { result in
             importStyleSample(result)
         }
         .alert("导入失败", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
