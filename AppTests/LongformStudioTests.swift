@@ -43,8 +43,7 @@ final class LongformStudioTests: XCTestCase {
         let settings = SettingsStore(defaults: defaults)
         var profile = AIEndpointProfile(name: "Scripted", endpoint: URL(string: "https://example.com/v1/chat/completions")!, model: "scripted", streams: false)
         profile.keychainReference = "test-\(UUID().uuidString)"
-        try settings.save(profile: profile, apiKey: "test-key")
-        defer { try? settings.keychain.remove(reference: profile.keychainReference) }
+        try settings.save(profile: profile, apiKey: nil)
 
         let repository = ProjectRepository(rootURL: root)
         let project = NovelProject(title: "闭环测试", platform: .qidian, genre: "玄幻", sellingPoint: "线索破局", targetWordCount: 100_000, protagonistGoal: "查明真相", targetChapterWords: 20)
@@ -57,7 +56,7 @@ final class LongformStudioTests: XCTestCase {
         workspace.versions = [initial]
         let client = ScriptedAIClient()
         let session = ProjectSession(workspace: workspace, repository: repository, settings: settings, aiClient: client)
-        let executor = WorkflowToolExecutor()
+        let executor = WorkflowToolExecutor(apiKeyOverride: "test-key")
 
         let draft = try await executor.generateDraft(session: session, chapter: chapter)
         session.acceptVersion(chapterID: chapter.id, versionID: draft.version.id)

@@ -3,6 +3,12 @@ import NovelCore
 
 @MainActor
 final class WorkflowToolExecutor {
+    private let apiKeyOverride: String?
+
+    init(apiKeyOverride: String? = nil) {
+        self.apiKeyOverride = apiKeyOverride
+    }
+
     struct PlanningResult {
         var text: String
         var artifactID: UUID
@@ -386,6 +392,7 @@ final class WorkflowToolExecutor {
     }
 
     private func apiKey(for profile: AIEndpointProfile, session: ProjectSession) throws -> String {
+        if let apiKeyOverride, !apiKeyOverride.isEmpty { return apiKeyOverride }
         guard let key = try session.settings.keychain.value(for: profile.keychainReference), !key.isEmpty else { throw AIClientError.missingKey }
         return key
     }
