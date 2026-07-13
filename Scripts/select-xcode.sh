@@ -9,9 +9,10 @@ if [[ ! -d "$XCODE_PATH" ]]; then
 fi
 
 sudo xcode-select --switch "$XCODE_PATH/Contents/Developer"
-ACTUAL_VERSION="$(xcodebuild -version | head -n 1)"
+VERSION_OUTPUT="$(xcodebuild -version)"
+ACTUAL_VERSION="${VERSION_OUTPUT%%$'\n'*}"
 if [[ "$ACTUAL_VERSION" != "Xcode 16.4" ]]; then
   echo "Expected Xcode 16.4, got: $ACTUAL_VERSION" >&2
   exit 1
 fi
-xcodebuild -version
+printf '%s\n' "$VERSION_OUTPUT"
