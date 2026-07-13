@@ -9,6 +9,7 @@ struct LibraryView: View {
     @State private var showNewProject = false
     @State private var showImporter = false
     @State private var showSettings = false
+    @State private var showTemplates = false
     @State private var projectToDelete: NovelProject?
 
     var body: some View {
@@ -25,10 +26,17 @@ struct LibraryView: View {
             .navigationTitle("长篇工坊")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gearshape")
+                    Menu {
+                        Button { showTemplates = true } label: {
+                            Label("写作模板", systemImage: "books.vertical")
+                        }
+                        Button { showSettings = true } label: {
+                            Label("设置", systemImage: "gearshape")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("设置")
+                    .accessibilityLabel("应用工具")
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button { showImporter = true } label: {
@@ -52,6 +60,10 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $showSettings) {
             NavigationStack { SettingsView() }
+                .environmentObject(settings)
+        }
+        .sheet(isPresented: $showTemplates) {
+            TemplateLibraryView(indexStore: appStore.indexStore)
                 .environmentObject(settings)
         }
         .fullScreenCover(item: $presentedSession, onDismiss: {
