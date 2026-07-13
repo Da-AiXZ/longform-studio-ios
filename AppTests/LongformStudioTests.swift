@@ -32,7 +32,11 @@ final class LongformStudioTests: XCTestCase {
 
     func testWorkflowExecutorCompletesAuditedChapterLoop() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer {
+            if FileManager.default.fileExists(atPath: root.path) {
+                try? FileManager.default.removeItem(at: root)
+            }
+        }
         let suiteName = "LongformStudioTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -69,11 +73,16 @@ final class LongformStudioTests: XCTestCase {
         XCTAssertEqual(session.workspace.chapters.first?.status, .approved)
         XCTAssertEqual(session.workspace.facts.first?.status, .accepted)
         XCTAssertFalse(session.workspace.versions.first { $0.id == initial.id }?.body == draft.text)
+        await session.flushSave()
     }
 
     func testEditingReviewedVersionCreatesNewVersionAndInvalidatesOldReports() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer {
+            if FileManager.default.fileExists(atPath: root.path) {
+                try? FileManager.default.removeItem(at: root)
+            }
+        }
         let repository = ProjectRepository(rootURL: root)
         let project = NovelProject(title: "版本测试", platform: .qidian, genre: "玄幻", sellingPoint: "", targetWordCount: 100_000, protagonistGoal: "")
         var workspace = try await repository.createProject(project)
@@ -93,6 +102,7 @@ final class LongformStudioTests: XCTestCase {
         XCTAssertEqual(updated.activeVersionID, newID)
         XCTAssertTrue(session.reviews(for: updated).isEmpty)
         XCTAssertEqual(session.workspace.versions.first { $0.id == version.id }?.body, "原正文")
+        await session.flushSave()
     }
 }
 
