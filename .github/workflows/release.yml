@@ -32,7 +32,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
       - name: Package unsigned IPA
-        run: bash Scripts/package-ipa.sh "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/长篇工坊.app" "$RUNNER_TEMP/LongformStudio-unsigned.ipa"
+        run: bash Scripts/package-ipa.sh "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/LongformStudio.app" "$RUNNER_TEMP/LongformStudio-unsigned.ipa"
       - name: Produce TrollStore fakesigned IPA
         run: bash Scripts/fakesign-ipa.sh "$RUNNER_TEMP/LongformStudio-unsigned.ipa" "$RUNNER_TEMP/LongformStudio-TrollStore.ipa"
       - name: Checksums

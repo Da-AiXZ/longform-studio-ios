@@ -29,7 +29,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ainovel.longformstudio
-        PRODUCT_NAME: 长篇工坊
+        PRODUCT_NAME: LongformStudio
         INFOPLIST_FILE: App/Resources/Info.plist
         CODE_SIGNING_ALLOWED: true
         TARGETED_DEVICE_FAMILY: "1,2"

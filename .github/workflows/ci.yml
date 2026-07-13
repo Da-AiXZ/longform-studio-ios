@@ -76,7 +76,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
       - name: Package Debug IPA
-        run: bash Scripts/package-ipa.sh "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphoneos/长篇工坊.app" "$RUNNER_TEMP/LongformStudio-Debug-unsigned.ipa"
+        run: bash Scripts/package-ipa.sh "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphoneos/LongformStudio.app" "$RUNNER_TEMP/LongformStudio-Debug-unsigned.ipa"
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
