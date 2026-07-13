@@ -22,7 +22,7 @@ final class AIWorkflowController: ObservableObject {
     private var task: Task<Void, Never>?
     private var operationID: UUID?
 
-    init(executor: WorkflowToolExecutor = WorkflowToolExecutor()) {
+    init(executor: WorkflowToolExecutor) {
         self.executor = executor
     }
 
