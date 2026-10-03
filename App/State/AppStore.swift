@@ -10,10 +10,12 @@ final class AppStore: ObservableObject {
 
     let repository: ProjectRepository
     let settings: SettingsStore
+    let indexStore: ManuscriptIndexStore
 
-    init(repository: ProjectRepository, settings: SettingsStore) {
+    init(repository: ProjectRepository, settings: SettingsStore, indexStore: ManuscriptIndexStore = .live()) {
         self.repository = repository
         self.settings = settings
+        self.indexStore = indexStore
     }
 
     static func live() -> AppStore {
@@ -25,7 +27,7 @@ final class AppStore: ObservableObject {
             try? manager.removeItem(at: root.deletingLastPathComponent())
             UserDefaults.standard.removeObject(forKey: "settings.v1")
         }
-        return AppStore(repository: ProjectRepository(rootURL: root), settings: SettingsStore())
+        return AppStore(repository: ProjectRepository(rootURL: root), settings: SettingsStore(), indexStore: .live())
     }
 
     func loadProjects() async {

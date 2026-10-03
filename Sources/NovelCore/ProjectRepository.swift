@@ -15,7 +15,7 @@ public enum ProjectRepositoryError: LocalizedError {
 }
 
 public actor ProjectRepository {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     private nonisolated let rootURL: URL
     private let encoder: JSONEncoder
@@ -54,8 +54,9 @@ public actor ProjectRepository {
     public func loadProject(id: UUID) throws -> ProjectWorkspace {
         let directory = projectDirectory(id)
         guard FileManager.default.fileExists(atPath: directory.path) else { throw ProjectRepositoryError.projectNotFound }
-        let project = try decode(NovelProject.self, from: directory.appendingPathComponent("manifest.json"))
+        var project = try decode(NovelProject.self, from: directory.appendingPathComponent("manifest.json"))
         guard project.schemaVersion <= Self.currentSchemaVersion else { throw ProjectRepositoryError.unsupportedSchema(project.schemaVersion) }
+        project.schemaVersion = Self.currentSchemaVersion
 
         return ProjectWorkspace(
             project: project,
@@ -71,7 +72,10 @@ public actor ProjectRepository {
             reviews: try decodeDirectory(ReviewReport.self, directory: directory.appendingPathComponent("reviews")),
             generationRecords: try decodeDirectory(GenerationRecord.self, directory: directory.appendingPathComponent("generations")),
             planningArtifacts: try decodeDirectory(PlanningArtifact.self, directory: directory.appendingPathComponent("planning/artifacts")),
-            styleProfile: decodeIfPresent(StyleProfile.self, from: directory.appendingPathComponent("style-profile.json"))
+            styleProfile: decodeIfPresent(StyleProfile.self, from: directory.appendingPathComponent("style-profile.json")),
+            preferredMode: decodeIfPresent(WorkspaceMode.self, from: directory.appendingPathComponent("agent/mode.json")) ?? .agent,
+            agentSession: decodeIfPresent(AgentSession.self, from: directory.appendingPathComponent("agent/session.json")) ?? AgentSession(),
+            appliedTemplate: decodeIfPresent(WritingTemplateSnapshot.self, from: directory.appendingPathComponent("templates/applied.json"))
         )
     }
 
@@ -93,6 +97,13 @@ public actor ProjectRepository {
         try encode(workspace.facts, to: directory.appendingPathComponent("continuity/facts.json"))
         if let styleProfile = workspace.styleProfile {
             try encode(styleProfile, to: directory.appendingPathComponent("style-profile.json"))
+        }
+        try encode(workspace.preferredMode, to: directory.appendingPathComponent("agent/mode.json"))
+        try encode(workspace.agentSession, to: directory.appendingPathComponent("agent/session.json"))
+        if let appliedTemplate = workspace.appliedTemplate {
+            try encode(appliedTemplate, to: directory.appendingPathComponent("templates/applied.json"))
+        } else {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("templates/applied.json"))
         }
 
         for chapter in workspace.chapters {
@@ -131,6 +142,27 @@ public actor ProjectRepository {
         return try encoder.encode(ProjectArchive(workspace: hydrated))
     }
 
+    public func validateProjectStorage(_ workspace: ProjectWorkspace) throws {
+        let data = try encoder.encode(ProjectArchive(workspace: workspace))
+        let decoded = try decoder.decode(ProjectArchive.self, from: data)
+        guard decoded.workspace.project.id == workspace.project.id,
+              decoded.workspace.chapters.count == workspace.chapters.count,
+              decoded.workspace.versions.count == workspace.versions.count else {
+            throw ProjectRepositoryError.invalidArchive
+        }
+        let directory = projectDirectory(workspace.project.id)
+        for version in workspace.versions {
+            if version.isBodyLoaded { continue }
+            let bodyURL = directory.appendingPathComponent("chapters/bodies/\(version.id.uuidString).txt")
+            let metadataURL = directory.appendingPathComponent("chapters/versions/\(version.id.uuidString).json")
+            if FileManager.default.fileExists(atPath: bodyURL.path) { continue }
+            let legacyBody = (try? decode(ChapterVersion.self, from: metadataURL).body) ?? ""
+            guard version.characterCount == 0 || !legacyBody.isEmpty else {
+                throw ProjectRepositoryError.invalidArchive
+            }
+        }
+    }
+
     public func importArchive(_ data: Data) throws -> ProjectWorkspace {
         let archive: ProjectArchive
         do {
@@ -138,12 +170,13 @@ public actor ProjectRepository {
         } catch {
             throw ProjectRepositoryError.invalidArchive
         }
-        guard archive.archiveVersion == 1 else { throw ProjectRepositoryError.invalidArchive }
+        guard (1...2).contains(archive.archiveVersion) else { throw ProjectRepositoryError.invalidArchive }
         var workspace = archive.workspace
         if FileManager.default.fileExists(atPath: projectDirectory(workspace.project.id).path) {
             workspace.project.id = UUID()
         }
         workspace.project.updatedAt = Date()
+        workspace.project.schemaVersion = Self.currentSchemaVersion
         try save(workspace)
         return workspace
     }
@@ -221,6 +254,9 @@ public actor ProjectRepository {
             directory.appendingPathComponent("references", isDirectory: true),
             directory.appendingPathComponent("planning", isDirectory: true),
             directory.appendingPathComponent("planning/artifacts", isDirectory: true),
+            directory.appendingPathComponent("agent", isDirectory: true),
+            directory.appendingPathComponent("templates", isDirectory: true),
+            directory.appendingPathComponent("analysis", isDirectory: true),
             directory.appendingPathComponent("chapters/cards", isDirectory: true),
             directory.appendingPathComponent("chapters/versions", isDirectory: true),
             directory.appendingPathComponent("chapters/bodies", isDirectory: true),

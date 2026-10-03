@@ -108,17 +108,109 @@ final class ProjectSession: ObservableObject, Identifiable {
 
     func updateProject(_ update: (inout NovelProject) -> Void) {
         update(&workspace.project)
+        workspace.project.planRevision += 1
         workspace.project.updatedAt = Date()
         scheduleSave()
     }
 
+    func setWorkspaceMode(_ mode: WorkspaceMode) {
+        workspace.preferredMode = mode
+        scheduleSave(immediate: true)
+    }
+
+    func setAgentPolicy(_ policy: AgentPolicy) {
+        workspace.agentSession.policy = policy
+        workspace.agentSession.updatedAt = Date()
+        scheduleSave(immediate: true)
+    }
+
+    func appendAgentMessage(_ message: AgentMessage) {
+        workspace.agentSession.messages.append(message)
+        workspace.agentSession.updatedAt = Date()
+        scheduleSave(immediate: true)
+    }
+
+    func addApprovalRequest(_ request: ApprovalRequest) {
+        workspace.agentSession.approvals.append(request)
+        workspace.agentSession.updatedAt = Date()
+        scheduleSave(immediate: true)
+    }
+
+    func resolveApproval(id: UUID, status: ApprovalStatus) {
+        guard let index = workspace.agentSession.approvals.firstIndex(where: { $0.id == id }) else { return }
+        workspace.agentSession.approvals[index].status = status
+        workspace.agentSession.approvals[index].resolvedAt = Date()
+        workspace.agentSession.updatedAt = Date()
+        scheduleSave(immediate: true)
+    }
+
+    func upsertAgentRun(_ run: AgentRun) {
+        if let index = workspace.agentSession.runs.firstIndex(where: { $0.id == run.id }) {
+            workspace.agentSession.runs[index] = run
+        } else {
+            workspace.agentSession.runs.append(run)
+        }
+        workspace.agentSession.activeRunID = run.status == .running || run.status == .queued || run.status == .paused || run.status == .waitingForApproval ? run.id : nil
+        workspace.agentSession.updatedAt = Date()
+        scheduleSave(immediate: true)
+    }
+
+    func applyPlanningPatch(_ patch: ProjectPlanPatch) throws {
+        guard patch.baseRevision == workspace.project.planRevision else {
+            throw ProjectSessionError.stalePlanningPatch(expected: workspace.project.planRevision, received: patch.baseRevision)
+        }
+        let selectedTemplate: WritingTemplate?
+        if patch.clearAppliedTemplate == true {
+            selectedTemplate = nil
+        } else if let templateID = patch.selectedTemplateID {
+            guard let template = settings.writingTemplates.first(where: { $0.id == templateID }) else {
+                throw ProjectSessionError.missingTemplate
+            }
+            selectedTemplate = template
+        } else {
+            selectedTemplate = workspace.appliedTemplate?.template
+        }
+        if let value = patch.title, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.project.title = value }
+        if let value = patch.platform { workspace.project.platform = value }
+        if let value = patch.genre, !value.isEmpty { workspace.project.genre = value }
+        if let value = patch.sellingPoint { workspace.project.sellingPoint = value }
+        if let value = patch.targetWordCount { workspace.project.targetWordCount = min(5_000_000, max(50_000, value)) }
+        if let value = patch.protagonistGoal { workspace.project.protagonistGoal = value }
+        if let value = patch.restrictedContent { workspace.project.restrictedContent = value }
+        if let value = patch.perspective { workspace.project.perspective = value }
+        if let value = patch.targetChapterWords { workspace.project.targetChapterWords = min(8_000, max(1_000, value)) }
+        if let value = patch.bible { workspace.bible = value }
+        if let value = patch.characters { mergeCharacters(value) }
+        if let value = patch.worldRules { mergeWorldRules(value) }
+        if let value = patch.volumes { mergeVolumes(value) }
+        if let value = patch.chapters {
+            mergePlannedChapters(value)
+        }
+        if patch.clearAppliedTemplate == true {
+            workspace.appliedTemplate = nil
+        } else if patch.selectedTemplateID != nil, let template = selectedTemplate {
+            workspace.appliedTemplate = WritingTemplateSnapshot(sourceTemplateID: template.id, template: template)
+        }
+        workspace.project.planRevision += 1
+        workspace.project.schemaVersion = ProjectRepository.currentSchemaVersion
+        workspace.project.updatedAt = Date()
+        scheduleSave(immediate: true)
+    }
+
+    func applyTemplate(_ template: WritingTemplate?) {
+        workspace.appliedTemplate = template.map { WritingTemplateSnapshot(sourceTemplateID: $0.id, template: $0) }
+        scheduleSave(immediate: true)
+    }
+
     func updateBible(_ bible: StoryBible) {
         workspace.bible = bible
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
     func addVolume(_ volume: VolumeOutline) {
         workspace.volumes.append(volume)
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
@@ -128,11 +220,13 @@ final class ProjectSession: ObservableObject, Identifiable {
         } else {
             workspace.volumes.append(volume)
         }
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
     func addCharacter(_ character: NovelCore.Character) {
         workspace.characters.append(character)
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
@@ -142,11 +236,13 @@ final class ProjectSession: ObservableObject, Identifiable {
         } else {
             workspace.characters.append(character)
         }
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
     func addWorldRule(_ rule: WorldRule) {
         workspace.worldRules.append(rule)
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
@@ -156,6 +252,7 @@ final class ProjectSession: ObservableObject, Identifiable {
         } else {
             workspace.worldRules.append(rule)
         }
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
@@ -190,6 +287,7 @@ final class ProjectSession: ObservableObject, Identifiable {
         chapter.versionIDs = [version.id]
         workspace.chapters.append(chapter)
         workspace.versions.append(version)
+        workspace.project.planRevision += 1
         selectedChapterID = chapter.id
         scheduleSave()
     }
@@ -198,6 +296,7 @@ final class ProjectSession: ObservableObject, Identifiable {
         guard let index = workspace.chapters.firstIndex(where: { $0.id == id }) else { return }
         update(&workspace.chapters[index])
         workspace.chapters[index].updatedAt = Date()
+        workspace.project.planRevision += 1
         scheduleSave()
     }
 
@@ -311,6 +410,16 @@ final class ProjectSession: ObservableObject, Identifiable {
         scheduleSave()
     }
 
+    func rejectConflictingCandidateFacts(chapterID: UUID) {
+        for index in workspace.facts.indices where
+            workspace.facts[index].chapterID == chapterID &&
+            workspace.facts[index].status == .candidate &&
+            workspace.facts[index].conflictWithFactID != nil {
+            workspace.facts[index].status = .rejected
+        }
+        scheduleSave(immediate: true)
+    }
+
     func approveChapter(chapterID: UUID, manualOverrideReason: String? = nil) -> QualityGateResult? {
         guard let chapterIndex = workspace.chapters.firstIndex(where: { $0.id == chapterID }),
               let activeID = workspace.chapters[chapterIndex].activeVersionID,
@@ -400,6 +509,83 @@ final class ProjectSession: ObservableObject, Identifiable {
         return version.id
     }
 
+    private func mergePlannedChapters(_ chapters: [ChapterCard]) {
+        for incoming in chapters.sorted(by: { $0.number < $1.number }) {
+            if let index = workspace.chapters.firstIndex(where: { $0.id == incoming.id || $0.number == incoming.number }) {
+                let existing = workspace.chapters[index]
+                var merged = existing
+                merged.volumeID = incoming.volumeID ?? existing.volumeID
+                if !incoming.title.isEmpty { merged.title = incoming.title }
+                if !incoming.goal.isEmpty { merged.goal = incoming.goal }
+                if !incoming.conflict.isEmpty { merged.conflict = incoming.conflict }
+                if !incoming.turn.isEmpty { merged.turn = incoming.turn }
+                if !incoming.hook.isEmpty { merged.hook = incoming.hook }
+                if !incoming.summary.isEmpty { merged.summary = incoming.summary }
+                if !incoming.linkedEntityIDs.isEmpty { merged.linkedEntityIDs = incoming.linkedEntityIDs }
+                merged.updatedAt = Date()
+                workspace.chapters[index] = merged
+            } else {
+                var chapter = incoming
+                chapter.status = .planned
+                chapter.activeVersionID = nil
+                chapter.versionIDs = []
+                workspace.chapters.append(chapter)
+            }
+        }
+        workspace.chapters.sort { $0.number < $1.number }
+        if selectedChapterID == nil { selectedChapterID = workspace.chapters.first?.id }
+    }
+
+    private func mergeCharacters(_ characters: [NovelCore.Character]) {
+        for incoming in characters where !incoming.name.isEmpty {
+            if let index = workspace.characters.firstIndex(where: { $0.id == incoming.id || $0.name == incoming.name }) {
+                var merged = workspace.characters[index]
+                if !incoming.name.isEmpty { merged.name = incoming.name }
+                if !incoming.role.isEmpty { merged.role = incoming.role }
+                if !incoming.desire.isEmpty { merged.desire = incoming.desire }
+                if !incoming.fear.isEmpty { merged.fear = incoming.fear }
+                if !incoming.flaw.isEmpty { merged.flaw = incoming.flaw }
+                if !incoming.arc.isEmpty { merged.arc = incoming.arc }
+                if !incoming.voice.isEmpty { merged.voice = incoming.voice }
+                if !incoming.currentState.isEmpty { merged.currentState = incoming.currentState }
+                workspace.characters[index] = merged
+            } else {
+                workspace.characters.append(incoming)
+            }
+        }
+    }
+
+    private func mergeWorldRules(_ rules: [WorldRule]) {
+        for incoming in rules where !incoming.title.isEmpty {
+            if let index = workspace.worldRules.firstIndex(where: { $0.id == incoming.id || $0.title == incoming.title }) {
+                var merged = workspace.worldRules[index]
+                if !incoming.category.isEmpty { merged.category = incoming.category }
+                if !incoming.title.isEmpty { merged.title = incoming.title }
+                if !incoming.detail.isEmpty { merged.detail = incoming.detail }
+                merged.immutable = incoming.immutable
+                workspace.worldRules[index] = merged
+            } else {
+                workspace.worldRules.append(incoming)
+            }
+        }
+    }
+
+    private func mergeVolumes(_ volumes: [VolumeOutline]) {
+        for incoming in volumes {
+            if let index = workspace.volumes.firstIndex(where: { $0.id == incoming.id || $0.number == incoming.number }) {
+                var merged = workspace.volumes[index]
+                if !incoming.title.isEmpty { merged.title = incoming.title }
+                if !incoming.goal.isEmpty { merged.goal = incoming.goal }
+                if !incoming.climax.isEmpty { merged.climax = incoming.climax }
+                if !incoming.resolution.isEmpty { merged.resolution = incoming.resolution }
+                workspace.volumes[index] = merged
+            } else {
+                workspace.volumes.append(incoming)
+            }
+        }
+        workspace.volumes.sort { $0.number < $1.number }
+    }
+
     private func editDistanceEstimate(_ old: String, _ new: String) -> Int {
         let sharedPrefix = zip(old, new).prefix { $0.0 == $0.1 }.count
         return max(old.count, new.count) - sharedPrefix
@@ -436,6 +622,20 @@ final class ProjectSession: ObservableObject, Identifiable {
         guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil) else { return }
         for case let url as URL in enumerator {
             try? FileManager.default.setAttributes(attributes, ofItemAtPath: url.path)
+        }
+    }
+}
+
+private enum ProjectSessionError: LocalizedError {
+    case stalePlanningPatch(expected: Int, received: Int)
+    case missingTemplate
+
+    var errorDescription: String? {
+        switch self {
+        case .stalePlanningPatch(let expected, let received):
+            return "规划方案基于 revision \(received)，当前工程已是 revision \(expected)。请让 Agent 重新读取工程后生成方案。"
+        case .missingTemplate:
+            return "方案选择的写作模板已不存在，请让 Agent 重新读取模板库。"
         }
     }
 }

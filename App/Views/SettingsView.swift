@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var selectedPlatform: PlatformProfile?
     @State private var showBlindTest = false
     @State private var showDiagnostics = false
+    @State private var showHealthCheck = false
 
     var body: some View {
         List {
@@ -44,18 +45,20 @@ struct SettingsView: View {
                 Text("API Key 仅存储在本机 Keychain，不写入工程备份或诊断日志。")
             }
 
-            Section("角色分工") {
-                ForEach(AIRole.allCases, id: \.self) { role in
-                    Picker(role.displayName, selection: Binding(
-                        get: { settings.assignments.assignments[role] },
-                        set: { value in
-                            var assignments = settings.assignments
-                            assignments.assignments[role] = value
-                            settings.assignments = assignments
+            Section("高级设置") {
+                DisclosureGroup("多模型角色分工") {
+                    ForEach(AIRole.allCases, id: \.self) { role in
+                        Picker(role.displayName, selection: Binding(
+                            get: { settings.assignments.assignments[role] },
+                            set: { value in
+                                var assignments = settings.assignments
+                                assignments.assignments[role] = value
+                                settings.assignments = assignments
+                            }
+                        )) {
+                            Text("使用第一个配置").tag(Optional<UUID>.none)
+                            ForEach(settings.profiles) { profile in Text(profile.name).tag(Optional(profile.id)) }
                         }
-                    )) {
-                        Text("使用第一个配置").tag(Optional<UUID>.none)
-                        ForEach(settings.profiles) { profile in Text(profile.name).tag(Optional(profile.id)) }
                     }
                 }
             }
@@ -86,6 +89,7 @@ struct SettingsView: View {
             }
 
             Section("本机") {
+                Button { showHealthCheck = true } label: { Label("运行自检", systemImage: "checkmark.shield") }
                 Button { showDiagnostics = true } label: { Label("脱敏诊断", systemImage: "stethoscope") }
                 LabeledContent("最低系统", value: "iOS 16.0")
                 LabeledContent("数据同步", value: "仅本机与手动备份")
@@ -99,6 +103,9 @@ struct SettingsView: View {
         .sheet(item: $selectedPlatform) { PlatformProfileEditor(profile: $0) }
         .sheet(isPresented: $showBlindTest) { BlindTestView() }
         .sheet(isPresented: $showDiagnostics) { DiagnosticView() }
+        .sheet(isPresented: $showHealthCheck) {
+            HealthReportView(session: nil).environmentObject(settings)
+        }
     }
 }
 
@@ -174,7 +181,7 @@ private struct ModelProfileEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("保存", action: save).disabled(!canSave) }
+                ToolbarItem(placement: .confirmationAction) { Button("保存", action: save).disabled(!canSave || isTesting) }
             }
         }
         .alert("操作失败", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -198,6 +205,23 @@ private struct ModelProfileEditor: View {
 
     private func save() {
         guard let value = normalizedProfile() else { return }
+        if !existing {
+            isTesting = true
+            Task {
+                do {
+                    var testProfile = value
+                    testProfile.outputTokenLimit = 16
+                    testProfile.temperature = 0
+                    _ = try await OpenAICompatibleClient().complete(profile: testProfile, apiKey: apiKey, messages: [ChatMessage(role: "user", content: "只回复 OK")])
+                    try settings.save(profile: value, apiKey: apiKey)
+                    dismiss()
+                } catch {
+                    errorMessage = error.localizedDescription
+                    isTesting = false
+                }
+            }
+            return
+        }
         do {
             try settings.save(profile: value, apiKey: apiKey.isEmpty ? nil : apiKey)
             dismiss()

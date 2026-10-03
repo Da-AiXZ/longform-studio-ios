@@ -32,6 +32,22 @@ final class ProjectRepositoryTests: XCTestCase {
         XCTAssertFalse(archiveText.localizedCaseInsensitiveContains("apiKey"))
         XCTAssertFalse(archiveText.localizedCaseInsensitiveContains("secret"))
     }
+
+    func testVersionOneArchiveImportsIntoVersionTwoWorkspace() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = ProjectRepository(rootURL: root)
+        let project = NovelProject(schemaVersion: 1, title: "旧备份", platform: .qidian, genre: "玄幻", sellingPoint: "", targetWordCount: 100_000, protagonistGoal: "")
+        let archive = ProjectArchive(archiveVersion: 1, workspace: ProjectWorkspace(project: project))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        let imported = try await repository.importArchive(encoder.encode(archive))
+
+        XCTAssertEqual(imported.project.schemaVersion, ProjectRepository.currentSchemaVersion)
+        XCTAssertEqual(imported.preferredMode, .agent)
+        XCTAssertTrue(imported.agentSession.messages.isEmpty)
+    }
 }
 
 private extension JSONDecoder {
